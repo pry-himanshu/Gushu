@@ -194,8 +194,7 @@ export const clearConversation = createServerFn({ method: "POST" })
     const { data: savedMessageRows, error: savedMessagesError } = await supabase
       .from("message_saves" as any)
       .select("message_id")
-      .eq("conversation_id", data.conversationId)
-      .eq("user_id", userId);
+      .eq("conversation_id", data.conversationId);
     if (savedMessagesError) {
       clearError = savedMessagesError.message;
       console.error("[clearConversation] fetch saved messages error", { error: savedMessagesError });
@@ -203,7 +202,7 @@ export const clearConversation = createServerFn({ method: "POST" })
     }
 
     const savedMessageIds = Array.isArray(savedMessageRows)
-      ? savedMessageRows.map((row: any) => row.message_id)
+      ? Array.from(new Set(savedMessageRows.map((row: any) => row.message_id)))
       : [];
 
     const { data: messagesToDelete, error: messagesError } = await supabase
@@ -330,18 +329,6 @@ export const clearConversation = createServerFn({ method: "POST" })
       participantIds.length > 0 &&
       clearedSettings.length === participantIds.length
     ) {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { error: deleteSavedAllError } = await supabaseAdmin
-        .from("message_saves" as any)
-        .delete()
-        .eq("conversation_id", data.conversationId);
-
-      if (deleteSavedAllError) {
-        clearError = deleteSavedAllError.message;
-        console.error("[clearConversation] delete all saved messages error", { error: deleteSavedAllError });
-        throw new Error(deleteSavedAllError.message);
-      }
-
       const { error: purgeError } = await supabase.rpc("purge_conversation", {
         _conv: data.conversationId,
       });

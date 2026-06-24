@@ -97,9 +97,8 @@ export const listMessages = createServerFn({ method: "POST" })
     const combinedMap = new Map<string, any>();
     primaryRows.forEach((r) => combinedMap.set(r.id, r));
     
-    // Add saved messages for this user, even if they were created before a clear action.
+    // Add saved messages from any participant, even if they were created before a clear action.
     savedData.forEach((s: any) => {
-      if (s.user_id !== userId) return;
       if (s.messages && !combinedMap.has(s.message_id)) {
         combinedMap.set(s.message_id, s.messages);
       }
