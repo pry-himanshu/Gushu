@@ -9,15 +9,59 @@ export const deleteForMe = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     try {
-      const { error } = await context.supabase.from("message_deletions").upsert(
+      const { supabase, userId } = context;
+
+      // Insert the deletion record for this user
+      const { error } = await supabase.from("message_deletions").upsert(
         {
           message_id: data.messageId,
-          user_id: context.userId,
+          user_id: userId,
           deleted_for_all: false,
         },
         { onConflict: "message_id,user_id" },
       );
       if (error) throw error;
+
+      // Check if both participants have deleted this message
+      const { data: conv } = await supabase
+        .from("conversations")
+        .select("user1_id, user2_id")
+        .eq("id", data.conversationId)
+        .single();
+
+      if (conv) {
+        const participants = [conv.user1_id, conv.user2_id];
+
+        const { data: deletions } = await supabase
+          .from("message_deletions")
+          .select("user_id")
+          .eq("message_id", data.messageId);
+
+        const deletedUserIds = (deletions ?? []).map((d) => d.user_id);
+        const allParticipantsDeleted = participants.every((p) => deletedUserIds.includes(p));
+
+        if (allParticipantsDeleted) {
+          // Get message media path before deletion
+          const { data: msg } = await supabase
+            .from("messages")
+            .select("media_path")
+            .eq("id", data.messageId)
+            .maybeSingle();
+
+          // Hard delete the message
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+          // Delete message_deletions entries first (due to FK constraint)
+          await supabaseAdmin.from("message_deletions").delete().eq("message_id", data.messageId);
+          await supabaseAdmin.from("messages").delete().eq("id", data.messageId);
+
+          // Remove media from storage if present
+          if (msg?.media_path) {
+            await supabaseAdmin.storage.from("chat-media").remove([msg.media_path]);
+          }
+        }
+      }
+
       return { ok: true };
     } catch (e: any) {
       console.error("Delete for me error:", e);

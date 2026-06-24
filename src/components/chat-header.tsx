@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Trash2, MoveVertical as MoreVertical, EyeOff, Eye, Lock, StickyNote, Settings as SettingsIcon, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Trash2, MoveVertical as MoreVertical, EyeOff, Eye, Lock, StickyNote, Settings as SettingsIcon, Loader as Loader2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar } from "@/components/avatar";
 import { ProfileView } from "@/components/profile-view";
@@ -187,7 +187,6 @@ export function ChatHeader({
   }, []);
 
   const isHidden = !!settings?.is_hidden;
-  const isHiddenLocked = !!settings?.is_hidden && !!settings?.secret_code_hash && !isUnlocked;
   const shouldMaskOther = isHiddenLocked;
 
   return (
