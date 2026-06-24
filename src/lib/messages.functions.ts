@@ -97,13 +97,11 @@ export const listMessages = createServerFn({ method: "POST" })
     const combinedMap = new Map<string, any>();
     primaryRows.forEach((r) => combinedMap.set(r.id, r));
     
-    // add saved messages for this user only (so clear chat removes your saved messages)
+    // Add saved messages for this user, even if they were created before a clear action.
     savedData.forEach((s: any) => {
       if (s.user_id !== userId) return;
       if (s.messages && !combinedMap.has(s.message_id)) {
-        if (!userSettings?.cleared_at || s.messages.created_at > userSettings.cleared_at) {
-          combinedMap.set(s.message_id, s.messages);
-        }
+        combinedMap.set(s.message_id, s.messages);
       }
     });
 

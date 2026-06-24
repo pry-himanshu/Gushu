@@ -190,6 +190,22 @@ export const clearConversation = createServerFn({ method: "POST" })
     updatedRows = Array.isArray(upsertedRows) ? upsertedRows.length : 0;
 
     // 2. Mark all existing messages in this conversation deleted for this user.
+    // Saved messages are preserved unless clearSaved is explicitly requested.
+    const { data: savedMessageRows, error: savedMessagesError } = await supabase
+      .from("message_saves" as any)
+      .select("message_id")
+      .eq("conversation_id", data.conversationId)
+      .eq("user_id", userId);
+    if (savedMessagesError) {
+      clearError = savedMessagesError.message;
+      console.error("[clearConversation] fetch saved messages error", { error: savedMessagesError });
+      throw new Error(savedMessagesError.message);
+    }
+
+    const savedMessageIds = Array.isArray(savedMessageRows)
+      ? savedMessageRows.map((row: any) => row.message_id)
+      : [];
+
     const { data: messagesToDelete, error: messagesError } = await supabase
       .from("messages")
       .select("id")
@@ -201,11 +217,13 @@ export const clearConversation = createServerFn({ method: "POST" })
     }
 
     if (Array.isArray(messagesToDelete) && messagesToDelete.length > 0) {
-      const deletionPayload = messagesToDelete.map((message: any) => ({
-        message_id: message.id,
-        user_id: userId,
-        deleted_for_all: false,
-      }));
+      const deletionPayload = messagesToDelete
+        .filter((message: any) => data.clearSaved || !savedMessageIds.includes(message.id))
+        .map((message: any) => ({
+          message_id: message.id,
+          user_id: userId,
+          deleted_for_all: false,
+        }));
 
       const deletedRes = await supabase
         .from("message_deletions" as any)
