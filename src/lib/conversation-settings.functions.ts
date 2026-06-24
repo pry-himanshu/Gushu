@@ -189,6 +189,23 @@ export const clearConversation = createServerFn({ method: "POST" })
 
     updatedRows = Array.isArray(upsertedRows) ? upsertedRows.length : 0;
 
+    if (data.clearSaved) {
+      const { data: mySavedRows, error: mySavedError } = await supabase
+        .from("message_saves" as any)
+        .select("message_id")
+        .eq("conversation_id", data.conversationId)
+        .eq("user_id", userId)
+        .limit(1);
+      if (mySavedError) {
+        clearError = mySavedError.message;
+        console.error("[clearConversation] fetch my saved messages error", { error: mySavedError });
+        throw new Error(mySavedError.message);
+      }
+      if (!Array.isArray(mySavedRows) || mySavedRows.length === 0) {
+        throw new Error("You can only clear saved chats if you have saved messages in this conversation.");
+      }
+    }
+
     // 2. Mark all existing messages in this conversation deleted for this user.
     // Saved messages are preserved unless clearSaved is explicitly requested.
     const { data: savedMessageRows, error: savedMessagesError } = await supabase

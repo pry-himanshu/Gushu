@@ -66,6 +66,7 @@ interface ChatHeaderProps {
   isUnlocked: boolean;
   loading?: boolean;
   isCollapsed?: boolean;
+  hasSavedByMe?: boolean;
 }
 
 export function ChatHeader({
@@ -78,6 +79,7 @@ export function ChatHeader({
   isUnlocked,
   loading,
   isCollapsed,
+  hasSavedByMe,
 }: ChatHeaderProps) {
   const leave = useServerFn(leaveConversation);
   const hideFn = useServerFn(toggleConversationHidden);
@@ -310,6 +312,7 @@ export function ChatHeader({
                     id="clearSaved" 
                     checked={alsoClearSaved} 
                     onCheckedChange={(v) => setAlsoClearSaved(!!v)}
+                    disabled={!hasSavedByMe}
                     className="border-primary"
                   />
                   <Label 
@@ -318,6 +321,9 @@ export function ChatHeader({
                   >
                     Also clear saved chats
                   </Label>
+                  {!hasSavedByMe && (
+                    <span className="text-xs text-muted-foreground">Only enabled when you have saved chats.</span>
+                  )}
                 </div>
               </AlertDialogHeader>
               <AlertDialogFooter>

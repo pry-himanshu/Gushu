@@ -116,6 +116,8 @@ function ChatPage() {
     refetchInterval: 5000,
   });
 
+  const hasSavedByMe = (msgs.data ?? []).some((m: any) => m.saved_by_me);
+
   useEffect(() => {
     if (msgs.data) {
       console.log("[ChatPage] msgs.data changed", { conversationId, count: msgs.data.length });
@@ -347,6 +349,7 @@ function ChatPage() {
         isUnlocked={isUnlocked}
         loading={conv.isLoading && !conv.data}
         isCollapsed={isInputFocused}
+        hasSavedByMe={hasSavedByMe}
       />
 
       {/* Locked screen */}
