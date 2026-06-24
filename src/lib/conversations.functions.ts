@@ -62,6 +62,7 @@ export const listMyConversations = createServerFn({ method: "GET" })
       hidden: c.hidden ?? false,
       locked: c.locked ?? false,
       hasPin: c.has_pin ?? false,
+      hasSecretCode: c.has_secret_code ?? false,
       cleared_at: c.cleared_at,
     }));
 

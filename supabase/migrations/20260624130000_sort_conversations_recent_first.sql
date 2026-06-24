@@ -12,6 +12,7 @@ RETURNS TABLE (
   hidden BOOLEAN,
   locked BOOLEAN,
   has_pin BOOLEAN,
+  has_secret_code BOOLEAN,
   cleared_at TIMESTAMPTZ,
   removed_at TIMESTAMPTZ
 ) LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
@@ -30,6 +31,7 @@ BEGIN
            COALESCE(cs.is_hidden, false) as is_hidden,
            COALESCE(cs.is_locked, false) as is_locked,
            cs.pin_hash IS NOT NULL as has_pin,
+           cs.secret_code_hash IS NOT NULL as has_secret_code,
            cs.cleared_at,
            cs.removed_at
     FROM public.conversation_settings cs
@@ -73,6 +75,7 @@ BEGIN
     COALESCE(s.is_hidden, false) as hidden,
     COALESCE(s.is_locked, false) as locked,
     COALESCE(s.has_pin, false) as has_pin,
+    COALESCE(s.has_secret_code, false) as has_secret_code,
     s.cleared_at,
     s.removed_at
   FROM my_convs mc

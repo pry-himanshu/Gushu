@@ -47,6 +47,7 @@ type Item = {
   hidden?: boolean;
   locked?: boolean;
   hasPin?: boolean;
+  hasSecretCode?: boolean;
   cleared_at?: string | null;
   removed_at?: string | null;
 };
@@ -163,13 +164,21 @@ export const ConversationList = memo(function ConversationList({
                 >
                   <div className="flex gap-3">
                     <div className="relative shrink-0">
-                      <Avatar
-                        name={o?.display_name ?? o?.username ?? "?"}
-                        url={o?.avatar_url}
-                        size={40}
-                      />
-                      {o && isOnline(o.last_seen_at) && !o?.avatar_url && (
-                        <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-emerald-400 ring-2 ring-sidebar" />
+                      {c.hidden && c.hasSecretCode ? (
+                        <div className="grid h-10 w-10 place-items-center rounded-full bg-muted text-muted-foreground ring-1 ring-border">
+                          <Lock className="size-4" />
+                        </div>
+                      ) : (
+                        <>
+                          <Avatar
+                            name={o?.display_name ?? o?.username ?? "?"}
+                            url={o?.avatar_url}
+                            size={40}
+                          />
+                          {o && isOnline(o.last_seen_at) && !o?.avatar_url && (
+                            <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-emerald-400 ring-2 ring-sidebar" />
+                          )}
+                        </>
                       )}
                       {(c.locked || c.hasPin) && (
                         <span className="absolute -top-1 -right-1 grid size-4 place-items-center rounded-full bg-amber-400 text-[8px] font-bold text-black">
@@ -181,9 +190,9 @@ export const ConversationList = memo(function ConversationList({
                       <div className="mb-0.5 flex items-center justify-between">
                         <div className="flex items-center gap-1.5 truncate">
                           <span className="truncate text-sm font-medium text-foreground">
-                            {o?.display_name ?? o?.username}
+                            {c.hidden && c.hasSecretCode ? "User xyz" : (o?.display_name ?? o?.username)}
                           </span>
-                          {o?.verified && <VerifiedBadge size={12} />}
+                          {! (c.hidden && c.hasSecretCode) && o?.verified && <VerifiedBadge size={12} />}
                           {c.hidden && <EyeOff className="size-3 text-muted-foreground" />}
                         </div>
                         <span className="ml-2 shrink-0 text-[10px] text-muted-foreground pr-8">
