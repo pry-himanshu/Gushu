@@ -286,6 +286,75 @@ export const clearConversation = createServerFn({ method: "POST" })
       }
     }
 
+    // If every active participant has cleared the conversation, purge the conversation entirely.
+    if (debug.cleanupExecuted === false && participantIds.length > 0) {
+      const { data: settingsRows, error: settingsError } = await supabase
+        .from("conversation_settings")
+        .select("user_id, cleared_at")
+        .eq("conversation_id", data.conversationId)
+        .in("user_id", participantIds);
+      if (settingsError) {
+        clearError = settingsError.message;
+        debug.error = clearError;
+        console.error("[clearConversation] fetch settings error", { error: settingsError });
+        throw new Error(settingsError.message);
+      }
+
+      const settingsList: any[] = Array.isArray(settingsRows) ? settingsRows : [];
+      const clearedSettings = settingsList.filter((row: any) => row.cleared_at);
+
+      if (clearedSettings.length === participantIds.length) {
+        console.log("[clearConversation] ALL PARTICIPANTS CLEARED, purging conversation", {
+          participantIds,
+          conversationId: data.conversationId,
+        });
+
+        const { data: purgeResult, error: purgeError } = await supabase.rpc("purge_conversation", {
+          _conv: data.conversationId,
+        } as any);
+        if (purgeError) {
+          clearError = purgeError.message;
+          debug.error = clearError;
+          console.error("[clearConversation] purge_conversation error", { error: purgeError });
+          throw new Error(purgeError.message);
+        }
+
+        const { data: deletedSaves, error: deleteSavedError } = await supabase
+          .from("message_saves" as any)
+          .delete()
+          .eq("conversation_id", data.conversationId)
+          .select();
+        if (deleteSavedError) {
+          clearError = deleteSavedError.message;
+          console.error("[clearConversation] delete saved error", { error: deleteSavedError });
+          throw new Error(deleteSavedError.message);
+        }
+
+        deletedRows += Array.isArray(deletedSaves) ? deletedSaves.length : 0;
+        debug.purged = true;
+
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: objects, error: listError } = await supabaseAdmin.storage
+            .from("chat-media")
+            .list(data.conversationId, { limit: 1000 });
+          if (listError) {
+            console.warn("Failed to list chat-media objects for purge:", listError.message);
+          } else if (objects && objects.length > 0) {
+            const paths = objects.map((obj: any) => `${data.conversationId}/${obj.name}`);
+            const { error: removeError } = await supabaseAdmin.storage
+              .from("chat-media")
+              .remove(paths);
+            if (removeError) {
+              console.warn("Failed to delete chat-media files for purge:", removeError.message);
+            }
+          }
+        } catch (storageError) {
+          console.warn("Failed to cleanup chat-media after purge:", storageError);
+        }
+      }
+    }
+
     // 5. If clearSaved is true, delete all saved messages for this user and conversation
     if (data.clearSaved) {
       const { data: deletedSaves, error: deleteSavedError } = await supabase
