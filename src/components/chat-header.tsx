@@ -64,6 +64,7 @@ interface ChatHeaderProps {
   onSettingsChange: (s: Partial<Settings>) => void;
   onUnlocked: () => void;
   isUnlocked: boolean;
+  isHiddenLocked?: boolean;
   loading?: boolean;
   isCollapsed?: boolean;
   hasSavedByMe?: boolean;
@@ -77,6 +78,7 @@ export function ChatHeader({
   onSettingsChange,
   onUnlocked,
   isUnlocked,
+  isHiddenLocked,
   loading,
   isCollapsed,
   hasSavedByMe,
@@ -185,6 +187,8 @@ export function ChatHeader({
   }, []);
 
   const isHidden = !!settings?.is_hidden;
+  const isHiddenLocked = !!settings?.is_hidden && !!settings?.secret_code_hash && !isUnlocked;
+  const shouldMaskOther = isHiddenLocked;
 
   return (
     <>
@@ -234,19 +238,25 @@ export function ChatHeader({
               "flex shrink-0 items-center transition-all duration-500",
               isCollapsed ? "opacity-90" : "opacity-100"
             )}>
-              <Avatar
-                name={other.display_name ?? other.username}
-                url={other.avatar_url}
-                size={36}
-                className={cn(
-                  "size-9 shrink-0 transition-all duration-500",
-                  isTyping 
-                    ? "ring-2 ring-primary shadow-[0_0_25px_rgba(139,92,246,0.8)] animate-pulse"
-                    : isOnline(other.last_seen_at)
-                      ? "ring-2 ring-primary/40 shadow-[0_0_15px_rgba(139,92,246,0.4)] animate-pulse"
-                      : "ring-1 ring-white/10 shadow-[0_0_10px_rgba(255,255,255,0.05)]" // Offline "constant light"
-                )}
-              />
+              {shouldMaskOther ? (
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-muted text-muted-foreground ring-1 ring-border">
+                  <Lock className="size-4" />
+                </div>
+              ) : (
+                <Avatar
+                  name={other.display_name ?? other.username}
+                  url={other.avatar_url}
+                  size={36}
+                  className={cn(
+                    "size-9 shrink-0 transition-all duration-500",
+                    isTyping 
+                      ? "ring-2 ring-primary shadow-[0_0_25px_rgba(139,92,246,0.8)] animate-pulse"
+                      : isOnline(other.last_seen_at)
+                        ? "ring-2 ring-primary/40 shadow-[0_0_15px_rgba(139,92,246,0.4)] animate-pulse"
+                        : "ring-1 ring-white/10 shadow-[0_0_10px_rgba(255,255,255,0.05)]"
+                  )}
+                />
+              )}
             </div>
 
             <div className={cn(
@@ -255,22 +265,26 @@ export function ChatHeader({
             )}>
               <div className="flex flex-wrap items-center gap-1.5">
                 <h2 className="truncate font-display text-base tracking-tight text-foreground sm:text-xl group-hover:text-primary transition-colors">
-                  {other.display_name ?? other.username}
+                  {shouldMaskOther ? "User xyz" : other.display_name ?? other.username}
                 </h2>
-                {other.verified && <VerifiedBadge size={14} />}
+                {!shouldMaskOther && other.verified && <VerifiedBadge size={14} />}
                 {settings?.pin_hash && (
                   <Lock className={`size-3 ${isUnlocked ? "text-emerald-400" : "text-amber-400"}`} />
                 )}
                 {isHidden && <EyeOff className="size-3 text-muted-foreground" />}
-                <span className="hidden rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
-                  @{other.username}
-                </span>
+                {!shouldMaskOther && (
+                  <span className="hidden rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
+                    @{other.username}
+                  </span>
+                )}
               </div>
               <p className={cn(
                 "text-[11px] text-muted-foreground transition-all duration-300",
                 isCollapsed ? "opacity-0 h-0 overflow-hidden" : "opacity-100 h-auto"
               )}>
-                {isTyping ? (
+                {shouldMaskOther ? (
+                  <span className="text-xs text-muted-foreground">Hidden conversation</span>
+                ) : isTyping ? (
                   <TypingIndicator className="inline-flex" />
                 ) : isOnline(other.last_seen_at) ? (
                   <span className="inline-flex items-center gap-1.5">

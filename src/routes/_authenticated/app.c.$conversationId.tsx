@@ -347,6 +347,7 @@ function ChatPage() {
         onSettingsChange={handleSettingsChange}
         onUnlocked={() => setIsUnlocked(true)}
         isUnlocked={isUnlocked}
+        isHiddenLocked={isHiddenLocked}
         loading={conv.isLoading && !conv.data}
         isCollapsed={isInputFocused}
         hasSavedByMe={hasSavedByMe}

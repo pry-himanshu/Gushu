@@ -41,6 +41,25 @@ export const listMyConversations = createServerFn({ method: "GET" })
       .rpc("list_my_conversations" as any);
     if (error) throw new Error(error.message);
 
+    const hiddenConversationIds = (convs ?? [])
+      .filter((c: any) => c.hidden)
+      .map((c: any) => c.id);
+
+    const secretCodeMap = new Map<string, boolean>();
+    if (hiddenConversationIds.length > 0) {
+      const { data: secretSettings, error: secretError } = await supabase
+        .from("conversation_settings")
+        .select("conversation_id, secret_code_hash")
+        .in("conversation_id", hiddenConversationIds)
+        .eq("user_id", userId);
+      if (secretError) throw new Error(secretError.message);
+      for (const row of (secretSettings ?? []) as any[]) {
+        if (row?.conversation_id) {
+          secretCodeMap.set(row.conversation_id, !!row.secret_code_hash);
+        }
+      }
+    }
+
     const results = (convs ?? []).map((c: any) => ({
       id: c.id,
       other: c.other ? {
@@ -62,7 +81,7 @@ export const listMyConversations = createServerFn({ method: "GET" })
       hidden: c.hidden ?? false,
       locked: c.locked ?? false,
       hasPin: c.has_pin ?? false,
-      hasSecretCode: c.has_secret_code ?? false,
+      hasSecretCode: c.has_secret_code ?? secretCodeMap.get(c.id) ?? false,
       cleared_at: c.cleared_at,
     }));
 
