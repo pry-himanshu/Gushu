@@ -259,7 +259,9 @@ export const clearConversation = createServerFn({ method: "POST" })
           conversationId: data.conversationId,
         });
 
-        const { data: deletedCount, error: cleanupError } = await supabase
+        // Use admin client to delete messages - regular user can't delete due to RLS
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: deletedCount, error: cleanupError } = await supabaseAdmin
           .from("messages")
           .delete()
           .lte("created_at", minClearedAt)
