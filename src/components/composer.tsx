@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { Paperclip, Send, Smile, Loader as Loader2, X, Mic, Camera, EyeOff } from "lucide-react";
+import { Paperclip, Send, Smile, Loader as Loader2, X, Mic, Camera } from "lucide-react";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Drawer, DrawerContent, DrawerTrigger, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { VoiceRecorder } from "./voice-recorder";
 import { CameraCapture } from "./camera-capture";
-import { PrivacyOptionsPicker, type PrivacyOption } from "./privacy-options-picker";
 import { createMediaUpload, sendMessage } from "@/lib/messages.functions";
 import { setTyping, clearTyping } from "@/lib/presence.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,9 +52,6 @@ export function Composer({
   const [isFocused, setIsFocused] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
-  const [privacyOption, setPrivacyOption] = useState<PrivacyOption>({
-    disappearAfterView: false,
-  });
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const submittingRef = useRef(false);
@@ -132,7 +128,6 @@ export function Composer({
             size: file.size,
             kind: kindForMime(file.type),
           },
-          disappearAfterView: privacyOption.disappearAfterView,
         },
       });
     } catch (e: any) {
@@ -170,19 +165,17 @@ export function Composer({
               size: blob.size,
               kind,
             },
-            disappearAfterView: privacyOption.disappearAfterView,
           },
         });
         if (kind === "audio") setShowVoice(false);
         if (kind === "image" || kind === "video") setShowCamera(false);
-        setPrivacyOption({ disappearAfterView: false });
       } catch (e: any) {
         toast.error(e?.message ?? "Upload failed");
       } finally {
         setBusy(false);
       }
     },
-    [conversationId, createUpload, send, privacyOption],
+    [conversationId, createUpload, send],
   );
 
   const refocusInput = useCallback(() => {
@@ -271,7 +264,6 @@ export function Composer({
           conversationId,
           content,
           replyTo: replyTo?.id,
-          disappearAfterView: privacyOption.disappearAfterView,
         },
       });
 
@@ -331,7 +323,6 @@ export function Composer({
       }
 
       onCancelReply?.();
-      setPrivacyOption({ disappearAfterView: false });
     } catch (e: any) {
       toast.error(e?.message ?? "Send failed");
       setText(content);
@@ -524,7 +515,6 @@ export function Composer({
 
         {text.trim() && (
           <div className="flex items-center gap-1">
-            <PrivacyOptionsPicker value={privacyOption} onChange={setPrivacyOption} />
             <Button
               type="button"
               onPointerDown={(e) => {

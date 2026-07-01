@@ -5,10 +5,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { getConversation } from "@/lib/conversations.functions";
 import { listMessages, markRead } from "@/lib/messages.functions";
-import { markViewed } from "@/lib/message-delete.functions";
 import { updatePresence, getTypingStatus } from "@/lib/presence.functions";
 import { getConversationSettings, verifyConversationSecretCode, updateLastExit } from "@/lib/conversation-settings.functions";
-import { subscribeToMessageNotifications } from "@/lib/notification-service";
 import { ChatHeader } from "@/components/chat-header";
 import { MessageBubble } from "@/components/message-bubble";
 import { TypingBubble } from "@/components/typing-indicator";
@@ -51,7 +49,6 @@ function ChatPage() {
   const getConv = useServerFn(getConversation);
   const listMsgs = useServerFn(listMessages);
   const mark = useServerFn(markRead);
-  const markView = useServerFn(markViewed);
   const updatePres = useServerFn(updatePresence);
   const getTyping = useServerFn(getTypingStatus);
   const getSettings = useServerFn(getConversationSettings);
@@ -127,13 +124,6 @@ function ChatPage() {
       // Trigger re-render for dynamic UI updates
     }
   }, [conversationId, msgs.data]);
-
-  // Force re-render every second to handle "live" disappearing of messages
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => forceUpdate(n => n + 1), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Realtime subscription
   useEffect(() => {
@@ -295,23 +285,6 @@ function ChatPage() {
     });
     mark({ data: { conversationId } }).catch(() => {});
   }, [conversationId, msgs.data, isLocked, mark, meId, queryClient]);
-
-  // DAV: Record viewed state in message_user_views for disappear_after_view messages
-  // This is the critical step that enables updateLastExit to know whether the recipient
-  // has viewed the message. Without this, message_user_views is always empty and
-  // the delete-after-viewing lifecycle never completes.
-  useEffect(() => {
-    if (!msgs.data?.length || isLocked) return;
-    const davMessages = msgs.data.filter(
-      (msg: any) => msg.disappear_after_view && msg.sender_id !== meId
-    );
-    if (davMessages.length === 0) return;
-
-    // Mark each DAV message as viewed for this user (idempotent — upsert on server)
-    for (const msg of davMessages) {
-      markView({ data: { messageId: msg.id } }).catch(() => {});
-    }
-  }, [conversationId, msgs.data, isLocked, meId, markView]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -557,11 +530,7 @@ function ChatPage() {
                   if (createdAt <= clearedAt) return false;
                 }
 
-                const now = Date.now();
-
-                if (!m.expires_at) return true;
-
-                return new Date(m.expires_at).getTime() > now;
+                return true;
               }) ?? [];
 
               let prevDate: Date | null = null;

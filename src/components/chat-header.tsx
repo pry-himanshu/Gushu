@@ -47,7 +47,6 @@ type Other = {
 type Settings = {
   is_locked?: boolean;
   is_hidden?: boolean;
-  expiry_seconds?: number | null;
   theme?: string;
   wallpaper_url?: string | null;
   pin_hash?: string | null;

@@ -7,19 +7,12 @@ export const getConversationSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input: unknown) => z.object({ conversationId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
-    const [settingsRes, convRes] = await Promise.all([
-      context.supabase
-        .from("conversation_settings")
-        .select("*")
-        .eq("conversation_id", data.conversationId)
-        .eq("user_id", context.userId)
-        .maybeSingle(),
-      context.supabase
-        .from("conversations")
-        .select("expiry_seconds")
-        .eq("id", data.conversationId)
-        .maybeSingle()
-    ]);
+    const settingsRes = await context.supabase
+      .from("conversation_settings")
+      .select("*")
+      .eq("conversation_id", data.conversationId)
+      .eq("user_id", context.userId)
+      .maybeSingle();
 
     let row = settingsRes.data;
 
@@ -34,7 +27,6 @@ export const getConversationSettings = createServerFn({ method: "POST" })
           is_locked: false,
           is_hidden: false,
           notification_enabled: false,
-          disappear_after_view_enabled: false,
         })
         .select()
         .single();
@@ -42,10 +34,7 @@ export const getConversationSettings = createServerFn({ method: "POST" })
       row = newRow;
     }
 
-    return {
-      ...(row as any),
-      expiry_seconds: (convRes.data as any)?.expiry_seconds ?? null
-    };
+    return row as any;
   });
 
 export const setConversationPin = createServerFn({ method: "POST" })
@@ -402,91 +391,14 @@ export const removeFromInbox = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const setConversationExpiry = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input: unknown) =>
-    z.object({
-      conversationId: z.string().uuid(),
-      seconds: z.number().nullable(),
-    }).parse(input))
-  .handler(async ({ data, context }) => {
-    // 1. Fetch current profile for system message
-    const { data: profile } = await context.supabase
-      .from("profiles")
-      .select("display_name, username")
-      .eq("id", context.userId)
-      .single();
-
-    const name = profile?.display_name || profile?.username || "Someone";
-    
-    // 2. Format duration for message
-    let durationLabel = "Never";
-    if (data.seconds === 0) durationLabel = "After Viewing";
-    else if (data.seconds === 3600) durationLabel = "1 Hour";
-    else if (data.seconds === 86400) durationLabel = "24 Hours";
-    else if (data.seconds === 604800) durationLabel = "7 Days";
-
-    const systemText = data.seconds === null 
-      ? `${name} disabled disappearing messages.`
-      : `${name} changed disappearing messages to ${durationLabel}.`;
-
-    // 3. Update Shared Conversation Setting
-    const { error: updateError } = await (context.supabase
-      .from("conversations") as any)
-      .update({ expiry_seconds: data.seconds })
-      .eq("id", data.conversationId);
-    
-    if (updateError) {
-      console.error("[setConversationExpiry] Error updating conversation:", updateError);
-      throw new Error(updateError.message);
-    }
-
-    // 4. Insert System Message (Soft failure allowed here)
-    try {
-      const { error: msgError } = await (context.supabase
-        .from("messages") as any)
-        .insert({
-          conversation_id: data.conversationId,
-          sender_id: context.userId,
-          content: systemText,
-          message_type: "system",
-        });
-
-      if (msgError) {
-        console.error("[setConversationExpiry] Error inserting system message (non-blocking):", msgError);
-      }
-    } catch (e) {
-      console.error("[setConversationExpiry] Exception inserting system message:", e);
-    }
-    
-    return { ok: true };
-  });
-
 export const updateLastExit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((input: unknown) => z.object({ conversationId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const exitTimestamp = new Date().toISOString();
-    const { davTrace, davVerifyDeletionRow, davVerifyMessageRow, logSqlResult } = await import(
-      "@/lib/dav-lifecycle-trace.server"
-    );
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    davTrace("STEP3_EXIT", null, {
-      userId,
-      conversationId: data.conversationId,
-      timestamp: exitTimestamp,
-    });
-
-    davTrace("STEP4_HANDLER", null, {
-      handler: "updateLastExit",
-      userId,
-      conversationId: data.conversationId,
-    });
-
-    // Step 1: Record last_exit_at for this user
-    const settingsUpsert = await supabase
+    const { error } = await supabase
       .from("conversation_settings")
       .upsert(
         {
@@ -495,182 +407,9 @@ export const updateLastExit = createServerFn({ method: "POST" })
           last_exit_at: exitTimestamp,
         } as any,
         { onConflict: "conversation_id,user_id" },
-      )
-      .select("conversation_id, user_id, last_exit_at");
+      );
 
-    logSqlResult("STEP5_SQL", null, "UPSERT", "conversation_settings", {
-      conversation_id: data.conversationId,
-      user_id: userId,
-      last_exit_at: exitTimestamp,
-    }, settingsUpsert);
-
-    logSqlResult("STEP6_AFFECTED", null, "UPSERT", "conversation_settings", {
-      conversation_id: data.conversationId,
-      user_id: userId,
-    }, settingsUpsert);
-
-    if (settingsUpsert.error) {
-      console.error("[updateLastExit] failed to update last_exit_at:", settingsUpsert.error);
-      throw new Error(settingsUpsert.error.message);
-    }
-
-    // Step 2: Find the other participant
-    const { data: conversation, error: conversationError } = await supabase
-      .from("conversations")
-      .select("user1_id, user2_id")
-      .eq("id", data.conversationId)
-      .maybeSingle();
-
-    if (conversationError) throw new Error(conversationError.message);
-
-    const participants = [conversation?.user1_id, conversation?.user2_id].filter(Boolean) as string[];
-    const otherParticipantId = participants.find((p) => p !== userId) ?? null;
-
-    if (!otherParticipantId) {
-      davTrace("STEP4_HANDLER", null, { halt: true, reason: "no_other_participant" });
-      return { ok: true };
-    }
-
-    // Step 3: Find all disappear_after_view messages in this conversation
-    const { data: messages, error: messagesError } = await supabaseAdmin
-      .from("messages")
-      .select("id, sender_id, conversation_id, disappear_after_view")
-      .eq("conversation_id", data.conversationId)
-      .eq("disappear_after_view", true);
-
-    logSqlResult("STEP5_SQL", null, "SELECT", "messages", {
-      conversation_id: data.conversationId,
-      disappear_after_view: true,
-    }, { data: messages, error: messagesError, count: messages?.length ?? 0 });
-
-    if (messagesError) throw new Error(messagesError.message);
-
-    const messageIds = (messages ?? []).map((m: any) => m.id as string).filter(Boolean);
-    if (messageIds.length === 0) {
-      davTrace("STEP4_HANDLER", null, { halt: true, reason: "no_dav_messages_in_conversation" });
-      return { ok: true };
-    }
-
-    davTrace("STEP4_HANDLER", null, {
-      davMessageCount: messageIds.length,
-      davMessageIds: messageIds,
-    });
-
-    // Step 4: Fetch view records for both participants (admin bypasses RLS)
-    const { data: viewRows, error: viewRowsError } = await (supabaseAdmin as any)
-      .from("message_user_views")
-      .select("message_id, user_id, viewed_at")
-      .in("message_id", messageIds)
-      .in("user_id", [userId, otherParticipantId]);
-
-    logSqlResult("STEP5_SQL", null, "SELECT", "message_user_views", {
-      message_id: messageIds,
-      user_id: [userId, otherParticipantId],
-    }, { data: viewRows, error: viewRowsError, count: viewRows?.length ?? 0 });
-
-    if (viewRowsError) throw new Error(viewRowsError.message);
-
-    const viewMap = new Map<string, Map<string, string>>();
-    for (const row of (viewRows ?? []) as { message_id: string; user_id: string; viewed_at: string }[]) {
-      if (!viewMap.has(row.message_id)) viewMap.set(row.message_id, new Map());
-      viewMap.get(row.message_id)!.set(row.user_id, row.viewed_at);
-    }
-
-    const toHideForMe: string[] = [];
-
-    for (const msg of messages ?? []) {
-      const userViews = viewMap.get(msg.id as string);
-      const msgId = msg.id as string;
-
-      if (msg.sender_id === userId) {
-        const recipientViewedAt = userViews?.get(otherParticipantId);
-        davTrace("STEP4_HANDLER", msgId, {
-          role: "sender_leaving",
-          recipientViewedAt: recipientViewedAt ?? null,
-          willHide: !!recipientViewedAt,
-        });
-        if (recipientViewedAt) {
-          toHideForMe.push(msgId);
-        }
-      } else {
-        const myViewedAt = userViews?.get(userId);
-        davTrace("STEP4_HANDLER", msgId, {
-          role: "recipient_leaving",
-          myViewedAt: myViewedAt ?? null,
-          willHide: !!myViewedAt,
-        });
-        if (myViewedAt) {
-          toHideForMe.push(msgId);
-        } else {
-          await davVerifyMessageRow(supabaseAdmin, msgId);
-        }
-      }
-    }
-
-    if (toHideForMe.length === 0) {
-      davTrace("STEP4_HANDLER", null, {
-        halt: true,
-        reason: "no_viewed_dav_messages_for_leaving_user",
-        userId,
-      });
-      return { ok: true };
-    }
-
-    const rowsToInsert = toHideForMe.map((message_id) => ({
-      message_id,
-      user_id: userId,
-      deleted_for_all: false,
-    }));
-
-    const deletionUpsert = await supabaseAdmin
-      .from("message_deletions")
-      .upsert(rowsToInsert, { onConflict: "message_id,user_id" })
-      .select("message_id, user_id, deleted_for_all");
-
-    for (const message_id of toHideForMe) {
-      logSqlResult("STEP5_SQL", message_id, "UPSERT", "message_deletions", {
-        message_id,
-        user_id: userId,
-        deleted_for_all: false,
-      }, deletionUpsert);
-    }
-
-    if (deletionUpsert.error) {
-      console.error("[updateLastExit] upsert message_deletions failed:", deletionUpsert.error);
-      throw new Error(deletionUpsert.error.message);
-    }
-
-    const affectedRows = deletionUpsert.data?.length ?? 0;
-    for (const message_id of toHideForMe) {
-      logSqlResult("STEP6_AFFECTED", message_id, "UPSERT", "message_deletions", {
-        message_id,
-        user_id: userId,
-      }, { data: deletionUpsert.data, error: null, count: affectedRows });
-    }
-
-    if (affectedRows === 0) {
-      davTrace("STEP6_AFFECTED", toHideForMe[0] ?? null, {
-        halt: true,
-        reason: "message_deletions_upsert_zero_rows",
-        attempted: rowsToInsert,
-      });
-      throw new Error("[updateLastExit] message_deletions upsert affected 0 rows");
-    }
-
-    for (const message_id of toHideForMe) {
-      const deletionRow = await davVerifyDeletionRow(supabaseAdmin, message_id, userId);
-      if (!deletionRow) {
-        throw new Error(`[updateLastExit] message_deletions row missing after upsert for message ${message_id}`);
-      }
-      await davVerifyMessageRow(supabaseAdmin, message_id);
-    }
-
-    davTrace("STEP7_VERIFY", null, {
-      success: true,
-      hiddenCount: toHideForMe.length,
-      hiddenMessageIds: toHideForMe,
-      userId,
-    });
+    if (error) throw new Error(error.message);
 
     return { ok: true };
   });

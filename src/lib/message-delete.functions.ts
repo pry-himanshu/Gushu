@@ -115,86 +115,26 @@ export const markViewed = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ messageId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { davTrace, davVerifyUserViewRow, logSqlResult } = await import(
-      "@/lib/dav-lifecycle-trace.server"
-    );
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: msg } = await (supabase
       .from("messages") as any)
-      .select("id, conversation_id, sender_id, disappear_after_view, media_path, message_type, view_count, viewed_at, first_read_at")
+      .select("id, message_type, view_count, viewed_at")
       .eq("id", data.messageId)
       .maybeSingle();
 
     if (!msg) return { ok: true };
 
-    const viewedAt = new Date().toISOString();
     const updateData: Record<string, any> = {
-      viewed_at: msg.viewed_at ?? viewedAt,
+      viewed_at: msg.viewed_at ?? new Date().toISOString(),
     };
 
     if (msg.message_type && ["image", "video", "file"].includes(msg.message_type)) {
       updateData.view_count = (msg.view_count ?? 0) + 1;
     }
 
-    const viewUpsert = await (supabaseAdmin as any)
-      .from("message_user_views")
-      .upsert(
-        {
-          message_id: data.messageId,
-          user_id: userId,
-          viewed_at: viewedAt,
-        },
-        { onConflict: "message_id,user_id" },
-      )
-      .select("message_id, user_id, viewed_at");
-
-    logSqlResult("STEP5_SQL", data.messageId, "UPSERT", "message_user_views", {
-      message_id: data.messageId,
-      user_id: userId,
-      viewed_at: viewedAt,
-    }, viewUpsert);
-
-    logSqlResult("STEP6_AFFECTED", data.messageId, "UPSERT", "message_user_views", {
-      message_id: data.messageId,
-      user_id: userId,
-    }, viewUpsert);
-
-    if (viewUpsert.error) {
-      davTrace("STEP2_VIEWED", data.messageId, {
-        failed: true,
-        stage: "message_user_views",
-        error: viewUpsert.error.message,
-      });
-      throw new Error(`[markViewed] message_user_views upsert failed: ${viewUpsert.error.message}`);
-    }
-
-    const msgUpdate = await (supabase.from("messages") as any)
+    await (supabase.from("messages") as any)
       .update(updateData)
-      .eq("id", data.messageId)
-      .select("id, viewed_at, first_read_at");
-
-    logSqlResult("STEP5_SQL", data.messageId, "UPDATE", "messages", { id: data.messageId }, msgUpdate);
-    logSqlResult("STEP6_AFFECTED", data.messageId, "UPDATE", "messages", { id: data.messageId }, msgUpdate);
-
-    if (msgUpdate.error) {
-      davTrace("STEP2_VIEWED", data.messageId, {
-        failed: true,
-        stage: "messages",
-        error: msgUpdate.error.message,
-      });
-      throw new Error(`[markViewed] messages update failed: ${msgUpdate.error.message}`);
-    }
-
-    if (msg.disappear_after_view) {
-      davTrace("STEP2_VIEWED", data.messageId, {
-        conversationId: msg.conversation_id,
-        userId,
-        viewed_at: viewedAt,
-        first_read_at: msgUpdate.data?.[0]?.first_read_at ?? msg.first_read_at,
-      });
-      await davVerifyUserViewRow(supabaseAdmin, data.messageId, userId);
-    }
+      .eq("id", data.messageId);
 
     return { ok: true };
   });

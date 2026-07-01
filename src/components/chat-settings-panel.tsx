@@ -29,7 +29,6 @@ import {
   removeConversationPin,
   toggleConversationHidden,
   clearConversation,
-  setConversationExpiry,
   setConversationTheme,
   setConversationWallpaper,
   setConversationNotification,
@@ -39,7 +38,7 @@ import {
 import { leaveConversation } from "@/lib/conversations.functions";
 import { toast } from "sonner";
 import {
-  Lock, EyeOff, Eye, Eraser, Timer, Palette, Image as ImageIcon, Bell, KeyRound, LogOut,
+  Lock, EyeOff, Eye, Eraser, Palette, Image as ImageIcon, Bell, KeyRound, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "@tanstack/react-router";
@@ -51,15 +50,6 @@ const THEMES = [
   { id: "neon", label: "Purple Neon", bg: "bg-violet-950 border-violet-600" },
   { id: "emerald", label: "Emerald", bg: "bg-emerald-950 border-emerald-700" },
   { id: "graphite", label: "Graphite", bg: "bg-neutral-800 border-neutral-600" },
-];
-
-const EXPIRY_OPTIONS = [
-  { label: "After Viewing", value: 0, icon: "🔥" },
-  { label: "Never", value: null },
-  { label: "1 Hour", value: 3600 },
-  { label: "24 Hours", value: 86400 },
-  { label: "7 Days", value: 604800 },
-  { label: "30 Days", value: 2592000 },
 ];
 
 const WALLPAPERS = [
@@ -93,7 +83,6 @@ const WALLPAPERS = [
 type Settings = {
   is_locked?: boolean;
   is_hidden?: boolean;
-  expiry_seconds?: number | null;
   theme?: string;
   wallpaper_url?: string | null;
   pin_hash?: string | null;
@@ -125,7 +114,6 @@ export function ChatSettingsPanel({
   const hideFn = useServerFn(toggleConversationHidden);
   const clearFn = useServerFn(clearConversation);
   const leaveFn = useServerFn(leaveConversation);
-  const expiryFn = useServerFn(setConversationExpiry);
   const themeFn = useServerFn(setConversationTheme);
   const wallpaperFn = useServerFn(setConversationWallpaper);
   const notifFn = useServerFn(setConversationNotification);
@@ -213,16 +201,6 @@ export function ChatSettingsPanel({
       navigate({ to: "/app" });
     } catch (e: any) {
       toast.error(e?.message ?? "Failed to delete chat");
-    }
-  }
-
-  async function handleExpiry(seconds: number | null) {
-    try {
-      await expiryFn({ data: { conversationId, seconds } });
-      onSettingsChange({ expiry_seconds: seconds });
-      toast.success(seconds !== null ? "Auto-delete timer set" : "Auto-delete disabled");
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed");
     }
   }
 
@@ -391,28 +369,6 @@ export function ChatSettingsPanel({
 
           <Separator className="my-4 bg-white/[0.06]" />
 
-          {/* Expiry */}
-          <Section icon={<Timer className="size-4 text-zinc-400" />} title="Auto-Delete Messages (Under Developement">
-            <div className="grid grid-cols-1 gap-1">
-              {EXPIRY_OPTIONS.map((opt) => (
-                <button
-                  key={String(opt.value)}
-                  onClick={() => handleExpiry(opt.value)}
-                  className={cn(
-                    "rounded-lg px-3 py-2 text-xs text-left transition-colors",
-                    settings?.expiry_seconds === opt.value
-                      ? "bg-white text-black font-medium"
-                      : "hover:bg-white/[0.06] text-zinc-500",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </Section>
-
-          <Separator className="my-4 bg-white/[0.06]" />
-
           {/* Theme */}
           <Section icon={<Palette className="size-4 text-zinc-400" />} title="Chat Theme">
             <div className="grid grid-cols-5 gap-2">
@@ -455,8 +411,6 @@ export function ChatSettingsPanel({
               ))}
             </div>
           </Section>
-
-          <Separator className="my-4 bg-white/[0.06]" />
 
           <Separator className="my-4 bg-white/[0.06]" />
 

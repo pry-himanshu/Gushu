@@ -2,11 +2,11 @@ import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import EmojiPicker, { Theme as EmojiTheme } from "emoji-picker-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQueryClient } from "@tanstack/react-query";
-import { Copy, Reply, Smile, Trash2, Check, CheckCheck, Clock, EyeOff, RotateCcw, CreditCard as Edit2, Star, FileText, Play, Pause, Trash, MoveHorizontal as MoreHorizontal, Plus, RefreshCw, Info } from "lucide-react";
+import { Copy, Reply, Smile, Trash2, Check, CheckCheck, Clock, RotateCcw, CreditCard as Edit2, Star, FileText, Play, Pause, Trash, MoveHorizontal as MoreHorizontal, Plus, RefreshCw, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { editMessage, saveMessage, unsaveMessage, signedMediaUrl, sendMessage } from "@/lib/messages.functions";
-import { deleteForMe, deleteForEveryone, markViewed } from "@/lib/message-delete.functions";
+import { deleteForMe, deleteForEveryone } from "@/lib/message-delete.functions";
 import { addReaction, removeReaction } from "@/lib/reactions.functions";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MessageInfoDialog } from "@/components/message-info-dialog";
+import { ImageViewer } from "@/components/image-viewer";
 
 export type Message = {
   id: string;
@@ -44,7 +45,6 @@ export type Message = {
   replied_message?: { id: string; content: string | null; message_type: string; media_name?: string | null; sender_id?: string; sender_name?: string } | null;
   viewed_at?: string | null;
   deleted_for_all?: boolean;
-  disappear_after_view?: boolean;
   deleted_for_everyone_at?: string | null;
   deleted_by_id?: string | null;
   deleted_by_name?: string | null;
@@ -376,13 +376,6 @@ export const MessageBubble = memo(function MessageBubble({
                     <Star className="size-3 fill-current" />
                   </div>
                 )}
-
-                {m.disappear_after_view && !mine && (
-                  <div className="mt-1 flex items-center gap-1 text-[10px] opacity-70">
-                    <EyeOff className="size-3" />
-                    <span>Deletes after viewing</span>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -425,7 +418,6 @@ export const MessageBubble = memo(function MessageBubble({
                           conversationId: m.conversation_id,
                           content: m.content ?? undefined,
                           replyTo: m.reply_to ?? undefined,
-                          disappearAfterView: m.disappear_after_view,
                         },
                       });
                     } catch (err) {
@@ -706,11 +698,7 @@ export const MessageBubble = memo(function MessageBubble({
 function MediaBlock({ m, mine }: { m: Message; mine: boolean }) {
   const sign = useServerFn(signedMediaUrl);
   const [url, setUrl] = useState<string | null>(null);
-  const [opened, setOpened] = useState(false);
-  const markViewedFn = useServerFn(markViewed);
-  const queryClient = useQueryClient();
-
-  const hasExpiry = m.disappear_after_view;
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   useEffect(() => {
     if (!m.media_path) return;
@@ -721,44 +709,45 @@ function MediaBlock({ m, mine }: { m: Message; mine: boolean }) {
     return () => { cancel = true; };
   }, [m.media_path, sign]);
 
-  const handleView = async () => {
-    if (!mine && !opened) {
-      setOpened(true);
-      try {
-        await markViewedFn({ data: { messageId: m.id } });
-        queryClient.invalidateQueries({ queryKey: ["messages", m.conversation_id] });
-      } catch {}
-    }
-  };
-
   if (m.message_type === "image") {
     return (
-      <div className="mb-2 overflow-hidden rounded-xl ring-1 ring-black/10">
-        {hasExpiry && !opened && !mine ? (
-          <button
-            onClick={handleView}
-            className="flex h-40 w-full flex-col items-center justify-center gap-2 bg-white/10 text-xs opacity-70 transition-opacity hover:opacity-100"
-          >
-            <EyeOff className="size-5" />
-            <span>Tap to view once</span>
-          </button>
-        ) : (
-          <a href={url ?? "#"} target="_blank" rel="noreferrer" className="block" onClick={!opened && !mine && hasExpiry ? handleView : undefined}>
-            {url ? <img src={url} alt={m.media_name ?? ""} className="max-h-80 w-full object-cover" /> : <div className="h-40 animate-pulse bg-muted-foreground/10" />}
-          </a>
+      <>
+        <div className="mb-2 overflow-hidden rounded-xl ring-1 ring-black/10">
+          {url ? (
+            <button
+              className="block w-full focus:outline-none"
+              onClick={() => setViewerOpen(true)}
+              aria-label="View image"
+            >
+              <img
+                src={url}
+                alt={m.media_name ?? ""}
+                className="max-h-80 w-full object-cover transition-transform duration-200 hover:scale-[1.02]"
+              />
+            </button>
+          ) : (
+            <div className="h-40 animate-pulse bg-muted-foreground/10" />
+          )}
+        </div>
+        {viewerOpen && url && (
+          <ImageViewer
+            src={url}
+            alt={m.media_name ?? ""}
+            onClose={() => setViewerOpen(false)}
+          />
         )}
-      </div>
+      </>
     );
   }
 
   if (m.message_type === "video") {
     return (
       <div className="mb-2 overflow-hidden rounded-xl ring-1 ring-black/10">
-        {hasExpiry && !opened && !mine ? (
-          <button onClick={handleView} className="flex h-40 w-full flex-col items-center justify-center gap-2 bg-white/10 text-xs opacity-70 transition-opacity hover:opacity-100">
-            <EyeOff className="size-5" /><span>Tap to view once</span>
-          </button>
-        ) : url ? <video src={url} controls className="max-h-80 w-full" onPlaying={!opened && !mine && hasExpiry ? handleView : undefined} /> : <div className="h-40 animate-pulse bg-muted-foreground/10" />}
+        {url ? (
+          <video src={url} controls className="max-h-80 w-full" />
+        ) : (
+          <div className="h-40 animate-pulse bg-muted-foreground/10" />
+        )}
       </div>
     );
   }
